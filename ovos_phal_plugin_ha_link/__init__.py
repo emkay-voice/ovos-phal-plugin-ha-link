@@ -18,6 +18,12 @@ Configuration, in mycroft.conf:
 
 The first time, Home Assistant shows the device under Settings -> Devices &
 services -> Discovered; add it there.
+
+The control panel's page (panel/) asks how the link is, and starts it again
+with new settings, on the bus:
+
+    ovos.ha_link.status   {}                 -> .response: see status()
+    ovos.ha_link.reload   {"config": {...}}  -> .response: the same
 """
 from __future__ import annotations
 
@@ -63,11 +69,31 @@ def device_id() -> str:
 class HALinkPlugin(PHALPlugin):
     def __init__(self, bus=None, config=None):
         super().__init__(bus=bus, name=PLUGIN, config=config)
+        self.link: HALink | None = None
+        # HiveMind satellites, when this OVOS is a hivemind-core master (Emkay
+        # Home, a hub): each one becomes a device in HA, connected via this one
+        self._peers: dict[str, str] = {}        # satellite device_id -> its peer
+        self._clients: dict[str, str] = {}      # connected clients: peer without session -> device_id
+        self.bus.on("hive.client.connect", self._hive_connect)
+        self.bus.on("hive.client.disconnect", self._hive_disconnect)
+        self.bus.on("ovos.ha_link.satellite.forget", self._hive_forget)
+        # Home Assistant's Assist for ovos-assist-pipeline-plugin (the pipeline
+        # plugin only sends bus messages; this link does the talking)
+        self.bus.on("ovos.assist.ping", self._assist_ping)
+        self.bus.on("ovos.assist.recognize", self._assist_recognize)
+        self.bus.on("ovos.assist.process", self._assist_process)
+        # the control panel's page: how the link is, and new settings at once
+        self.bus.on("ovos.ha_link.status", self._status)
+        self.bus.on("ovos.ha_link.reload", self._reload)
+        # every bus message; the link sends HA only the types it asked for
+        self.bus.on("message", self._from_bus)
+        self._start()
+
+    def _start(self) -> None:
         url, token = self.config.get("url"), self.config.get("token")
         if not url or not token:
             LOG.warning(f"{PLUGIN}: set url and token in mycroft.conf (PHAL -> {PLUGIN}) "
                         "to link this device to Home Assistant")
-            self.link = None
             return
         lang = None
         try:
@@ -98,24 +124,45 @@ class HALinkPlugin(PHALPlugin):
         self.link = HALink(url, token, info, on_bus=self._from_ha, on_event=self._on_link_event,
                            panel_url=panel_url or None, panel_token=panel_token,
                            on_satellite_bus=self._from_ha_for_satellite)
-        # HiveMind satellites, when this OVOS is a hivemind-core master (Emkay
-        # Home, a hub): each one becomes a device in HA, connected via this one
-        self._peers: dict[str, str] = {}        # satellite device_id -> its peer
-        self._clients: dict[str, str] = {}      # connected clients: peer without session -> device_id
-        if self.config.get("satellites", True):
-            self.bus.on("hive.client.connect", self._hive_connect)
-            self.bus.on("hive.client.disconnect", self._hive_disconnect)
-            self.bus.on("ovos.ha_link.satellite.forget", self._hive_forget)
-        # Home Assistant's Assist for ovos-assist-pipeline-plugin (the pipeline
-        # plugin only sends bus messages; this link does the talking)
-        self.bus.on("ovos.assist.ping", self._assist_ping)
-        self.bus.on("ovos.assist.recognize", self._assist_recognize)
-        self.bus.on("ovos.assist.process", self._assist_process)
-        # every bus message; the link sends HA only the types it asked for
-        self.bus.on("message", self._from_bus)
         self.link.start()
 
+    def _stop(self) -> None:
+        if self.link is not None:
+            self.link.stop()
+            self.link = None
+        self._peers.clear()
+
+    def status(self) -> dict[str, Any]:
+        """For the control panel's page: the settings (never the token) and
+        how the link is."""
+        out = {"configured": bool(self.config.get("url") and self.config.get("token")),
+               "url": self.config.get("url") or "", "token_set": bool(self.config.get("token")),
+               "name": self.config.get("name") or "", "default_name": socket.gethostname(),
+               "model": self.config.get("model") or "",
+               "panel_public_url": self.config.get("panel_public_url") or "",
+               "satellites_on": bool(self.config.get("satellites", True)),
+               "state": "off", "error": "", "since": None, "ha_version": "", "forward": 0,
+               "satellites": []}
+        if self.link is not None:
+            out.update(self.link.status())
+        return out
+
+    def _status(self, message: Message) -> None:
+        self.bus.emit(message.response(self.status()))
+
+    def _reload(self, message: Message) -> None:
+        """New settings from the control panel (already saved in mycroft.conf):
+        {"config": this plugin's section}. The link starts again with them."""
+        new = message.data.get("config")
+        if isinstance(new, dict):
+            self.config = dict(new)
+        self._stop()
+        self._start()
+        self.bus.emit(message.response(self.status()))
+
     def _from_bus(self, raw) -> None:
+        if self.link is None:
+            return
         try:
             message = json.loads(raw) if isinstance(raw, str) else raw
         except ValueError:
@@ -173,6 +220,8 @@ class HALinkPlugin(PHALPlugin):
         return peer.rsplit("::", 1)[0]
 
     def _hive_connect(self, message: Message) -> None:
+        if self.link is None or not self.config.get("satellites", True):
+            return
         peer, key = message.context.get("source"), message.data.get("key")
         if peer and key:
             self._clients[self._client_of(peer)] = self.satellite_id(key)
@@ -194,7 +243,7 @@ class HALinkPlugin(PHALPlugin):
 
     def _hive_disconnect(self, message: Message) -> None:
         key = message.data.get("key")
-        if not key:
+        if not key or self.link is None:
             return
         device_id = self.satellite_id(key)
         self._clients = {c: d for c, d in self._clients.items() if d != device_id}
@@ -208,7 +257,7 @@ class HALinkPlugin(PHALPlugin):
         sid = message.data.get("id")
         device_id = (self.satellite_id(message.data["key"]) if message.data.get("key")
                      else f"hm-{sid}" if sid else None)
-        if device_id:
+        if device_id and self.link is not None:
             self._peers.pop(device_id, None)
             self._clients = {c: d for c, d in self._clients.items() if d != device_id}
             self.link.drop_satellite(device_id, forget=True)
@@ -231,10 +280,12 @@ class HALinkPlugin(PHALPlugin):
 
     def _on_link_event(self, event: dict) -> None:
         if event.get("type") in ("ready", "lost", "displaced", "removed", "pending"):
-            self.bus.emit(Message("ovos.assist.available", {"available": self.link.ready}))
+            self.bus.emit(Message("ovos.assist.available",
+                                  {"available": bool(self.link and self.link.ready)}))
 
     def _assist_ping(self, message: Message) -> None:
-        self.bus.emit(message.reply("ovos.assist.available", {"available": self.link.ready}))
+        self.bus.emit(message.reply("ovos.assist.available",
+                                    {"available": bool(self.link and self.link.ready)}))
 
     @staticmethod
     def _ha_lang(lang: str | None) -> str | None:
@@ -247,6 +298,8 @@ class HALinkPlugin(PHALPlugin):
     def _assist_recognize(self, message: Message) -> None:
         """Does HA's own sentence matching know this one? Recognising only."""
         data = {"match": False, "intent": None}
+        if self.link is None:
+            return self.bus.emit(message.response(data))
         try:
             result = self.link.call({
                 "type": "conversation/agent/homeassistant/debug",
@@ -264,6 +317,8 @@ class HALinkPlugin(PHALPlugin):
     def _assist_process(self, message: Message) -> None:
         """HA carries it out, with its own agent (the one that recognised it)."""
         data = {"speech": None}
+        if self.link is None:
+            return self.bus.emit(message.response(data))
         try:
             result = self.link.call({
                 "type": "conversation/process",
@@ -281,7 +336,6 @@ class HALinkPlugin(PHALPlugin):
         self.bus.emit(message.response(data))
 
     def shutdown(self):
-        if self.link is not None:
-            self.bus.remove("message", self._from_bus)
-            self.link.stop()
+        self.bus.remove("message", self._from_bus)
+        self._stop()
         super().shutdown()

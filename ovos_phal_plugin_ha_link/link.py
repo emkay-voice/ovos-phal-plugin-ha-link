@@ -14,6 +14,7 @@ import itertools
 import json
 import re
 import threading
+import time
 from typing import Any
 
 import aiohttp
@@ -45,6 +46,12 @@ class HALink:
         self.forward: set[str] = set()  # the types HA wants (ready event)
         self.ready = False
         self.ha_device_id: str | None = None   # HA's own id for this device
+        # how the connection is, for the control panel's page (status()):
+        # connecting, unreachable, refused, pending, ready, displaced or removed
+        self.state = "connecting"
+        self.error = ""
+        self.ha_version = ""
+        self.since = time.time()
         self._results: dict[int, asyncio.Future] = {}
         self._ws: aiohttp.ClientWebSocketResponse | None = None
         self._ids = itertools.count(1)
@@ -67,6 +74,18 @@ class HALink:
         if self._ws is not None:
             asyncio.run_coroutine_threadsafe(self._ws.close(), self._loop)
         self._loop.call_soon_threadsafe(self._loop.stop)
+
+    def _set(self, state: str, error: str = "") -> None:
+        if state != self.state:
+            self.since = time.time()
+        self.state, self.error = state, error
+
+    def status(self) -> dict[str, Any]:
+        """How the connection is: never the token."""
+        return {"state": self.state, "error": self.error, "since": self.since,
+                "ha_version": self.ha_version, "forward": len(self.forward),
+                "satellites": [{"device_id": d, "name": (s.get("info") or {}).get("name", ""),
+                                "ready": bool(s.get("ready"))} for d, s in self.satellites.items()]}
 
     def send(self, message: dict[str, Any]) -> None:
         """A bus message for HA, if HA asked for this type (thread-safe)."""
@@ -162,10 +181,15 @@ class HALink:
                 await self._connect_once()
                 if not self._stopping:
                     LOG.warning("ha-link: Home Assistant closed the connection")
-            except (aiohttp.ClientError, OSError) as e:
-                LOG.warning(f"ha-link: can't reach Home Assistant: {e}")
             except PermissionError as e:
                 LOG.error(f"ha-link: {e}")
+                self._set("refused", str(e))
+            except (aiohttp.ClientError, OSError) as e:
+                LOG.warning(f"ha-link: can't reach Home Assistant: {e}")
+                self._set("unreachable", str(e) or type(e).__name__)
+            else:
+                if not self._stopping:
+                    self._set("unreachable", "Home Assistant closed the connection")
             self.ready = False
             for sat in self.satellites.values():   # connected again after the hub
                 sat["sub"], sat["ready"] = None, False
@@ -187,6 +211,7 @@ class HALink:
             if auth.get("type") != "auth_ok":
                 raise PermissionError(f"Home Assistant refused the token: {auth.get('message')}")
             LOG.info(f"ha-link: logged in to Home Assistant {auth.get('ha_version')}")
+            self.ha_version = auth.get("ha_version") or ""
             self._connect_id = next(self._ids)
             await ws.send_json({"id": self._connect_id, "type": "ovos/connect",
                                 "protocol": PROTOCOL, **device})
@@ -223,12 +248,14 @@ class HALink:
         match event.get("type"):
             case "pending":
                 self.ready = False
+                self._set("pending")
                 LOG.info("ha-link: waiting to be added in Home Assistant "
                          "(Settings -> Devices & services -> Discovered)")
             case "ready":
                 self.forward = set(event.get("forward", []))
                 self.ha_device_id = event.get("device_id")
                 self.ready = True
+                self._set("ready")
                 LOG.info(f"ha-link: ready, {len(self.forward)} message types go to Home Assistant")
                 # the satellites come in once their hub is there (again)
                 for device_id, sat in self.satellites.items():
@@ -240,6 +267,7 @@ class HALink:
                 self._loop.create_task(self._panel(event))
             case "displaced" | "removed":
                 self.ready = False
+                self._set(event["type"])
                 LOG.warning(f"ha-link: device {event['type']} in Home Assistant")
         self.on_event(event)
 

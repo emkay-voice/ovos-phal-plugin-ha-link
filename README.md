@@ -60,6 +60,24 @@ Restart OVOS' PHAL service. The device then appears in Home Assistant under
 keeps the device's id in `~/.local/state/ovos-phal-plugin-ha-link/device_id`,
 so it stays the same device.
 
+## In the control panel
+
+With [ovos-control-panel](https://github.com/OpenVoiceOS/ovos-control-panel) on the device, the plugin brings
+its own page, **Home Assistant**, with the everyday pages. It shows how the link is (connected, waiting to be
+added in Home Assistant, cannot reach it, token refused …) and sets the address, the token, the name and the rest
+above. They are saved in `mycroft.conf` with the panel's backups, and the link connects again with them at once,
+without a restart. The token is never shown again: leave the field empty to keep it. HiveMind satellites are
+listed, and one that is gone for good can be removed from Home Assistant there. Saving needs the panel's access
+token. The page is in Catalan, Danish, Dutch, English, French, Galician, German, Italian, Portuguese, Spanish and
+Basque.
+
+Behind it, on the bus:
+
+| Message | Data | Answer (`<message>.response`) |
+|---|---|---|
+| `ovos.ha_link.status` | | the settings (`url`, `name`, `model`, `panel_public_url`, `satellites_on`, `token_set`; never the token), `state` (`off`, `connecting`, `unreachable`, `refused`, `pending`, `ready`, `displaced`, `removed`), `error`, `ha_version`, `forward`, `satellites` |
+| `ovos.ha_link.reload` | `config`: the plugin's section | the same, with the link started again |
+
 ## How it works
 
 It uses the integration's protocol ([docs/protocol.md](https://github.com/andlo/ha-ovos-integration/blob/master/docs/protocol.md)):
