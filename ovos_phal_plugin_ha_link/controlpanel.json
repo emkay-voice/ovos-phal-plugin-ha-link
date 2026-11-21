@@ -27,15 +27,11 @@
   },
   {
    "type": "text",
-   "text": "haLink.step1"
-  },
-  {
-   "type": "text",
-   "text": "haLink.step2"
-  },
-  {
-   "type": "text",
-   "text": "haLink.step3"
+   "steps": [
+    "haLink.step1",
+    "haLink.step2",
+    "haLink.step3"
+   ]
   },
   {
    "type": "form",
@@ -89,6 +85,10 @@
    ]
   },
   {
+   "type": "text",
+   "text": "haLink.sat.hint"
+  },
+  {
    "type": "list",
    "heading": "haLink.sat.title",
    "query": "ovos.ha_link.status",
@@ -104,10 +104,6 @@
      "confirm": "haLink.sat.sure"
     }
    ]
-  },
-  {
-   "type": "text",
-   "text": "haLink.sat.hint"
   }
  ]
 }

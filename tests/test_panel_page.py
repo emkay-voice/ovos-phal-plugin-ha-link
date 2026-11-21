@@ -39,6 +39,6 @@ def test_the_page_speaks_every_language():
 def test_the_panel_reads_it():
     described = pytest.importorskip("ovos_webui.described")
     page, refs = described.check(PAGE, "ovos-phal-plugin-ha-link")
-    form = refs["b5.form"]
+    form = refs["b3.form"]
     assert described.missing(form, {"url": "http://ha:8123"}, {}) == ["token"]
-    assert refs["b6.a0"]["confirm"]
+    assert refs["b5.a0"]["confirm"]
