@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ovos-phal-plugin-ha-link"
-version = "0.1.0a4"
+version = "0.1.0a5"
 description = "OpenVoiceOS PHAL plugin: links the device to Home Assistant - it connects itself and carries its bus to the OpenVoiceOS integration"
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -23,6 +23,9 @@ dependencies = [
     "aiohttp>=3.9",
 ]
 
+[project.optional-dependencies]
+test = ["pytest", "fastapi", "httpx"]
+
 [project.urls]
 Homepage = "https://github.com/emkay-voice/ovos-phal-plugin-ha-link"
 Issues = "https://github.com/emkay-voice/ovos-phal-plugin-ha-link/issues"
@@ -31,5 +34,12 @@ Issues = "https://github.com/emkay-voice/ovos-phal-plugin-ha-link/issues"
 [project.entry-points."opm.phal"]
 ovos-phal-plugin-ha-link = "ovos_phal_plugin_ha_link:HALinkPlugin"
 
+# A page in ovos-control-panel (see ovos_phal_plugin_ha_link/panel). Only the panel loads it.
+[project.entry-points."opm.control_panel.page"]
+home-assistant = "ovos_phal_plugin_ha_link.panel:PAGE"
+
 [tool.setuptools]
-packages = ["ovos_phal_plugin_ha_link"]
+packages = ["ovos_phal_plugin_ha_link", "ovos_phal_plugin_ha_link.panel"]
+
+[tool.setuptools.package-data]
+"ovos_phal_plugin_ha_link.panel" = ["page.html", "icon.svg", "i18n/*.json"]
