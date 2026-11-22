@@ -8,7 +8,7 @@ version = "0.1.0a6"
 description = "OpenVoiceOS PHAL plugin: links the device to Home Assistant - it connects itself and carries its bus to the OpenVoiceOS integration"
 readme = "README.md"
 license = {text = "Apache-2.0"}
-authors = [{name = "Andreas Lorensen"}]
+authors = [{name = "emkay-voice"}]
 requires-python = ">=3.10"
 keywords = ["ovos", "openvoiceos", "plugin", "phal", "home-assistant", "homeassistant", "assist"]
 classifiers = [
