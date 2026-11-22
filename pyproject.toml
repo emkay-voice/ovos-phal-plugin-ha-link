@@ -4,11 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ovos-phal-plugin-ha-link"
-version = "0.1.0a6"
+version = "0.1.0a7"
 description = "OpenVoiceOS PHAL plugin: links the device to Home Assistant - it connects itself and carries its bus to the OpenVoiceOS integration"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 authors = [{name = "emkay-voice"}]
+maintainers = [{name = "Andreas Lorensen"}]
 requires-python = ">=3.10"
 keywords = ["ovos", "openvoiceos", "plugin", "phal", "home-assistant", "homeassistant", "assist"]
 classifiers = [
