@@ -1,0 +1,44 @@
+"""The page this plugin has in ovos-control-panel, described in
+controlpanel.json: the file, and its strings in every language."""
+import json
+import re
+from pathlib import Path
+
+import pytest
+
+import ovos_phal_plugin_ha_link as h
+
+ROOT = Path(h.__file__).parent
+TEXT = (ROOT / "controlpanel.json").read_text(encoding="utf-8")
+PAGE = json.loads(TEXT)
+LANGS = {"ca", "da", "de", "en", "es", "eu", "fr", "gl", "it", "nl", "pt"}
+
+
+def test_the_page_names_files_that_exist_and_its_own_messages():
+    assert PAGE["controlpanel"] == 1 and PAGE["id"] == "home-assistant"
+    assert (ROOT / PAGE["icon"]).is_file()
+    sent = re.findall(r'"(?:query|send|reload)": "([^"]+)"', TEXT)
+    assert sent and all(s.startswith(PAGE["bus"]) for s in sent)
+
+
+def test_the_page_speaks_every_language():
+    files = {p.parent.name.split("-")[0]: json.loads(p.read_text(encoding="utf-8"))
+             for p in (ROOT / "locale").glob("*/controlpanel.json")}
+    assert set(files) == LANGS
+    keys = set(files["en"])
+    for lang, table in files.items():
+        assert set(table) == keys, lang
+        assert all(text.strip() for text in table.values()), lang
+        assert "{ha_version}" in table["haLink.detail.ready"], lang
+    used = set(re.findall(r'"(haLink\.[\w.]+)"', TEXT))
+    prefixes = set(re.findall(r"@(haLink\.[\w.]+)\}", " ".join(files["en"].values())))
+    assert used <= keys
+    assert all(k in used or any(k.startswith(p + ".") for p in prefixes) for k in keys)
+
+
+def test_the_panel_reads_it():
+    described = pytest.importorskip("ovos_webui.described")
+    page, refs = described.check(PAGE, "ovos-phal-plugin-ha-link")
+    form = refs["b3.form"]
+    assert described.missing(form, {"url": "http://ha:8123"}, {}) == ["token"]
+    assert refs["b5.a0"]["confirm"]

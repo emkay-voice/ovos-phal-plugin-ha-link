@@ -1,0 +1,109 @@
+{
+ "controlpanel": 1,
+ "id": "home-assistant",
+ "title": "haLink.title",
+ "group": "everyday",
+ "order": 52,
+ "icon": "controlpanel.svg",
+ "bus": "ovos.ha_link.",
+ "blocks": [
+  {
+   "type": "text",
+   "text": "haLink.intro"
+  },
+  {
+   "type": "status",
+   "title": "haLink.status.title",
+   "query": "ovos.ha_link.status",
+   "refresh": 10,
+   "text": "haLink.status.line",
+   "rows": [
+    {
+     "label": "haLink.row.error",
+     "value": "{error}",
+     "when": "error"
+    }
+   ]
+  },
+  {
+   "type": "text",
+   "steps": [
+    "haLink.step1",
+    "haLink.step2",
+    "haLink.step3"
+   ]
+  },
+  {
+   "type": "form",
+   "title": "haLink.settings.title",
+   "save": {
+    "config": "PHAL.ovos-phal-plugin-ha-link",
+    "reload": "ovos.ha_link.reload"
+   },
+   "fields": [
+    {
+     "name": "url",
+     "label": "haLink.url",
+     "type": "url",
+     "required": true,
+     "max_length": 500
+    },
+    {
+     "name": "token",
+     "label": "haLink.token",
+     "type": "password",
+     "required": true,
+     "max_length": 2000
+    },
+    {
+     "name": "name",
+     "label": "haLink.name",
+     "type": "text",
+     "default": "",
+     "max_length": 100
+    },
+    {
+     "name": "panel_public_url",
+     "label": "haLink.public",
+     "type": "url",
+     "default": "",
+     "max_length": 500
+    },
+    {
+     "name": "model",
+     "label": "haLink.model",
+     "type": "text",
+     "default": "",
+     "max_length": 100
+    },
+    {
+     "name": "satellites",
+     "label": "haLink.satOn",
+     "type": "checkbox",
+     "default": true
+    }
+   ]
+  },
+  {
+   "type": "text",
+   "text": "haLink.sat.hint"
+  },
+  {
+   "type": "list",
+   "heading": "haLink.sat.title",
+   "query": "ovos.ha_link.status",
+   "items": "satellites",
+   "key": "device_id",
+   "title": "{name}",
+   "meta": "haLink.sat.meta",
+   "empty": "haLink.sat.none",
+   "actions": [
+    {
+     "label": "haLink.sat.remove",
+     "send": "ovos.ha_link.satellite.forget",
+     "confirm": "haLink.sat.sure"
+    }
+   ]
+  }
+ ]
+}

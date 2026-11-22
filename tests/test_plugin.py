@@ -1,18 +1,11 @@
-"""The plugin's messages for the control panel's page, and the page itself:
-its description, its strings in every language, and its routes."""
+"""The plugin's messages for the control panel's page (controlpanel.json)."""
 import json
-import re
-from pathlib import Path
 
 import pytest
 from ovos_bus_client.message import Message
 from ovos_utils.fakebus import FakeBus
 
 import ovos_phal_plugin_ha_link as plugin_module
-from ovos_phal_plugin_ha_link import panel
-
-PANEL = Path(panel.__file__).parent
-LANGS = {"ca", "da", "de", "en", "es", "eu", "fr", "gl", "it", "nl", "pt"}
 
 
 class FakeLink:
@@ -36,6 +29,9 @@ class FakeLink:
 
     def send(self, message):
         pass
+
+    def drop_satellite(self, device_id, forget=False):
+        self.dropped = (device_id, forget)
 
 
 @pytest.fixture
@@ -87,91 +83,9 @@ def test_assist_without_a_link_answers_no(bus):
 
 # ── the page ──────────────────────────────────────────────────────────────────
 
-def test_the_page_description_names_files_that_exist():
-    page = panel.PAGE
-    assert page["api_version"] == 1 and page["id"] == "home-assistant"
-    for key in ("html", "icon"):
-        assert (PANEL / page[key]).is_file(), key
 
-
-def test_the_page_speaks_every_language():
-    files = {p.stem: json.loads(p.read_text(encoding="utf-8")) for p in (PANEL / "i18n").glob("*.json")}
-    assert set(files) == LANGS
-    keys = set(files["en"])
-    for lang, table in files.items():
-        assert set(table) == keys, lang
-        assert all(text.strip() for text in table.values()), lang
-        assert "{v}" in table["haLink.detail.ready"] and "{n}" in table["haLink.detail.ready"], lang
-    html = (PANEL / "page.html").read_text(encoding="utf-8")
-    used = set(re.findall(r'data-i18n="([^"]+)"', html)) | set(re.findall(r'"(haLink\.[\w.]+)":', html))
-    assert used <= keys and keys - used <= {"haLink.title"}
-
-
-pytest.importorskip("fastapi")
-pytest.importorskip("httpx")
-
-
-@pytest.fixture
-def client(bus, tmp_path):
-    from fastapi import APIRouter, FastAPI
-    from fastapi.testclient import TestClient
-
-    p = plugin_module.HALinkPlugin(bus=bus, config={})
-    user = {"PHAL": {"ovos-phal-plugin-ha-link": {"token": "old-token", "name": "Old"}}}
-
-    class Config:
-        @staticmethod
-        def mutate(change, bus=None):
-            change(user)
-
-        @staticmethod
-        def section(name):
-            return json.loads(json.dumps(user.get(name) or {}))
-
-    class R:
-        api = APIRouter(prefix="/api")
-        privileged = APIRouter(prefix="/api")
-        config = Config
-
-        @staticmethod
-        def need_bus():
-            return bus
-
-        @staticmethod
-        def bus():
-            return bus
-
-    panel.routes(R)
-    app = FastAPI()
-    app.include_router(R.api)
-    app.include_router(R.privileged)
-    with TestClient(app) as c:
-        yield c, p, user
+def test_the_page_forgets_a_satellite_by_its_device_id(bus):
+    p = plugin_module.HALinkPlugin(bus=bus, config={"url": "http://ha:8123", "token": "t"})
+    bus.emit(Message("ovos.ha_link.satellite.forget", {"device_id": "hm-0123456789abcdef"}))
+    assert FakeLink.started[-1].dropped == ("hm-0123456789abcdef", True)
     p.shutdown()
-
-
-def test_saving_keeps_the_token_and_connects(client):
-    c, p, user = client
-    r = c.post("/api/ha-link", json={"url": "http://ha.local:8123/", "token": None, "name": "Kitchen",
-                                     "satellites": False})
-    assert r.status_code == 200, r.text
-    mine = user["PHAL"]["ovos-phal-plugin-ha-link"]
-    assert mine == {"url": "http://ha.local:8123", "token": "old-token", "name": "Kitchen", "satellites": False}
-    assert r.json()["state"] == "ready" and p.link.token == "old-token"
-    assert "old-token" not in r.text and "old-token" not in c.get("/api/ha-link").text
-
-
-@pytest.mark.parametrize("body", [{"url": "ha.local"}, {"url": "http://ha", "panel_public_url": "ftp://x"}])
-def test_bad_addresses_are_refused(client, body):
-    c, _, _ = client
-    assert c.post("/api/ha-link", json=body).status_code == 400
-
-
-def test_forgetting_a_satellite(client):
-    c, _, _ = client
-    seen = []
-    c.app  # noqa: B018
-    client[1].bus.on("ovos.ha_link.satellite.forget", lambda m: seen.append(m))
-    assert c.post("/api/ha-link/forget", json={"device_id": "hm-0123456789abcdef"}).json() == {"ok": True}
-    assert c.post("/api/ha-link/forget", json={"device_id": "../x"}).status_code == 422
-    assert seen

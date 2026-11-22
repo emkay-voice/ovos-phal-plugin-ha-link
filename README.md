@@ -62,8 +62,9 @@ so it stays the same device.
 
 ## In the control panel
 
-With [ovos-control-panel](https://github.com/OpenVoiceOS/ovos-control-panel) on the device, the plugin brings
-its own page, **Home Assistant**, with the everyday pages. It shows how the link is (connected, waiting to be
+With [ovos-control-panel](https://github.com/OpenVoiceOS/ovos-control-panel) on the device, the plugin has
+its own page, **Home Assistant**, with the everyday pages. It is described in `controlpanel.json` (strings in
+`locale/<lang>/controlpanel.json`) and drawn by the panel; no code of the plugin runs in the panel. It shows how the link is (connected, waiting to be
 added in Home Assistant, cannot reach it, token refused …) and sets the address, the token, the name and the rest
 above. They are saved in `mycroft.conf` with the panel's backups, and the link connects again with them at once,
 without a restart. The token is never shown again: leave the field empty to keep it. HiveMind satellites are

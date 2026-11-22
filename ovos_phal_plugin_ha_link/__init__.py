@@ -252,11 +252,11 @@ class HALinkPlugin(PHALPlugin):
 
     def _hive_forget(self, message: Message) -> None:
         """A satellite was removed from the hub (unpaired): its device goes
-        from HA too. data: {"key"} or {"id"}, the id as in satellite_id
-        without "hm-" (Emkay Home's client id)."""
+        from HA too. data: {"key"}, {"id"} (the id as in satellite_id without
+        "hm-", Emkay Home's client id), or {"device_id"} (the control panel)."""
         sid = message.data.get("id")
         device_id = (self.satellite_id(message.data["key"]) if message.data.get("key")
-                     else f"hm-{sid}" if sid else None)
+                     else f"hm-{sid}" if sid else message.data.get("device_id"))
         if device_id and self.link is not None:
             self._peers.pop(device_id, None)
             self._clients = {c: d for c, d in self._clients.items() if d != device_id}
